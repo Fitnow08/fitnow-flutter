@@ -1,0 +1,16 @@
+version: "3"
+
+tasks:
+  splash:
+    desc: Generate native splash screen from assets/images/splash.png
+    cmds:
+      - dart run flutter_native_splash:create
+
+  splash:clean:
+    desc: Remove generated native splash screen files
+    cmds:
+      - dart run flutter_native_splash:remove
+  upd:
+    desc: Update dependencies
+    cmds:
+      - flutter pub get
