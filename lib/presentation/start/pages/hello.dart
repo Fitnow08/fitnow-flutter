@@ -1,9 +1,8 @@
 import 'package:fitnow/core/configs/assets/app_images.dart';
 import 'package:fitnow/core/configs/theme/app_colors.dart';
 import 'package:fitnow/core/configs/theme/app_spacing.dart';
-import 'package:fitnow/presentation/intro/pages/get_started.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 class HelloPage extends StatelessWidget {
   const HelloPage({super.key});
@@ -55,16 +54,10 @@ class HelloPage extends StatelessWidget {
                         ),
                       ),
                     ),
-                    Builder(
-                      builder: (context) => ElevatedButton(
-                        onPressed: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const GetStartedPage(),
-                          ),
-                        ),
-                        child: const Text("Продолжить"),
-                      ),
+
+                    ElevatedButton(
+                      onPressed: () => context.go('/login'),
+                      child: const Text('Продолжить'),
                     ),
                   ],
                 ),

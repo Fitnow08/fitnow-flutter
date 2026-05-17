@@ -8,4 +8,5 @@ class AppColors {
   static const orange = Color(0xFFFF6B3D);
   static const green = Color(0xFFAFFD7E);
   static const fullDark = Color(0xFF000000);
+  static const forgotPasswordColor = Color(0x80FFFFFF);
 }

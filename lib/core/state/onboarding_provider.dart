@@ -14,13 +14,8 @@ class OnboardingNotifier extends Notifier<bool> {
     return _service.hasSeenHello;
   }
 
-  Future<void> markSeen() async {
-    await _service.markHelloSeen();
-    state = true;
-  }
-
-  Future<void> reset() async {
-    await _service.reset();
-    state = false;
+  Future<void> setSeen(bool value) async {
+    await _service.setHelloSeen(value);
+    state = value;
   }
 }

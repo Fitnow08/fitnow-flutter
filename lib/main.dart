@@ -1,24 +1,22 @@
+import 'package:fitnow/core/configs/routers/routers.dart';
 import 'package:fitnow/core/configs/services/onboarding.dart';
 import 'package:fitnow/core/configs/theme/app_theme.dart';
-import 'package:fitnow/core/state/onboarding_provider.dart';
-import 'package:fitnow/presentation/intro/pages/get_started.dart';
-import 'package:fitnow/presentation/start/pages/hello.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: '.env');
   final prefs = await SharedPreferences.getInstance();
-
-  runApp(
-    ProviderScope(
-      overrides: [
-        onboardingServiceProvider.overrideWithValue(OnboardingService(prefs)),
-      ],
-      child: const MyApp(),
-    ),
+  final container = ProviderContainer(
+    overrides: [
+      onboardingServiceProvider.overrideWithValue(OnboardingService(prefs)),
+    ],
   );
+  runApp(UncontrolledProviderScope(container: container, child: const MyApp()));
 }
 
 class MyApp extends ConsumerWidget {
@@ -26,13 +24,19 @@ class MyApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final seenHello = ref.watch(onboardingProvider);
-
-    return MaterialApp(
+    return MaterialApp.router(
       title: 'Fitnow',
       theme: AppTheme.darkTheme,
       debugShowCheckedModeBanner: false,
-      home: seenHello ? const GetStartedPage() : const HelloPage(),
+      routerConfig: AppRouter.router(ref),
+      scrollBehavior: const MaterialScrollBehavior().copyWith(
+        dragDevices: {
+          PointerDeviceKind.mouse,
+          PointerDeviceKind.touch,
+          PointerDeviceKind.stylus,
+          PointerDeviceKind.trackpad,
+        },
+      ),
     );
   }
 }
