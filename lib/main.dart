@@ -1,41 +1,23 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'services/auth_service.dart';
 import 'theme/app_tokens.dart';
-import 'theme/app_typography.dart';
-import 'widgets/tab_bar.dart';
-import 'screens/home_screen.dart';
-import 'screens/progress_screen.dart';
-import 'screens/programs_screen.dart';
-import 'screens/profile_screen.dart';
+import 'theme/app_typography.dart'; // нужен для buildFitNowTheme()
+import 'widgets/app_restart.dart';
+
+// Экраны:
+import 'screens/sign_in_screen.dart';
 import 'screens/onboarding_screen.dart';
+import 'screens/root_screen.dart';
 
-void main() => runApp(const FitNowApp());
-
-class FitNowApp extends StatefulWidget {
-  const FitNowApp({super.key});
-  @override
-  State<FitNowApp> createState() => _FitNowAppState();
+void main() {
+  runApp(const AppRestart(child: FitNowApp()));
 }
 
-class _FitNowAppState extends State<FitNowApp> {
-  bool _loading = true;
-  bool _onboarded = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _check();
-  }
-
-  Future<void> _check() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _onboarded = prefs.getBool(OnboardingPrefs.done) ?? false;
-      _loading = false;
-    });
-  }
-
-  void _finishOnboarding() => setState(() => _onboarded = true);
+class FitNowApp extends StatelessWidget {
+  const FitNowApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -43,82 +25,86 @@ class _FitNowAppState extends State<FitNowApp> {
       title: 'FitNow',
       debugShowCheckedModeBanner: false,
       theme: buildFitNowTheme(),
-      home: _loading
-          ? const Scaffold(backgroundColor: AppColors.bg, body: SizedBox.shrink())
-          : (_onboarded
-              ? const RootShell()
-              : OnboardingScreen(onFinish: _finishOnboarding)),
+      home: const _Bootstrap(),
     );
   }
 }
 
-class RootShell extends StatefulWidget {
-  const RootShell({super.key});
+/// Решает, какой экран показать первым.
+///
+/// Логика:
+///   1) Не авторизован                    → SignInScreen
+///   2) Авторизован, онбординг не пройден → OnboardingScreen
+///   3) Авторизован + онбординг пройден   → RootScreen (4 вкладки)
+///
+/// После входа/регистрации auth-экраны вызывают AppRestart.restart(),
+/// который пересоздаёт всё дерево от корня — _Bootstrap заново читает
+/// флаги и показывает нужный экран. Онбординг делает то же через onFinish.
+class _Bootstrap extends StatefulWidget {
+  const _Bootstrap();
+
   @override
-  State<RootShell> createState() => _RootShellState();
+  State<_Bootstrap> createState() => _BootstrapState();
 }
 
-class _RootShellState extends State<RootShell> {
-  int _index = 0;
-  HomeMode _homeMode = HomeMode.active;
+class _BootstrapState extends State<_Bootstrap> {
+  // null = ещё определяем (показываем сплэш).
+  _StartupState? _state;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolve();
+  }
+
+  Future<void> _resolve() async {
+    debugPrint('[BOOTSTRAP] _resolve() start');
+    final authed = await AuthService.isAuthenticated();
+    debugPrint('[BOOTSTRAP] authed=$authed mounted=$mounted');
+    if (!mounted) return;
+
+    if (!authed) {
+      setState(() => _state = _StartupState.signIn);
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final onboardingDone = prefs.getBool('onboarding_done') ?? false;
+    debugPrint('[BOOTSTRAP] onboardingDone=$onboardingDone -> '
+        '${onboardingDone ? "home" : "onboarding"}');
+    if (!mounted) return;
+
+    setState(() {
+      _state = onboardingDone ? _StartupState.home : _StartupState.onboarding;
+    });
+  }
+
+  /// Вызывается из auth-экранов и онбординга — пересоздаёт дерево от
+  /// корня (AppRestart) или показывает нужный экран по флагам.
 
   @override
   Widget build(BuildContext context) {
-    final screens = [
-      HomeScreen(mode: _homeMode),
-      const ProgressScreen(),
-      const ProgramsScreen(),
-      const ProfileScreen(),
-    ];
+    final state = _state;
 
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      body: Stack(
-        children: [
-          Positioned.fill(child: IndexedStack(index: _index, children: screens)),
-          if (_index == 0) _homeModeSwitcher(),
-          FitNowTabBar(
-            activeIndex: _index,
-            onChange: (i) => setState(() => _index = i),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _homeModeSwitcher() {
-    Widget chip(HomeMode m, String label) {
-      final active = _homeMode == m;
-      return GestureDetector(
-        onTap: () => setState(() => _homeMode = m),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: active ? AppColors.lime : AppColors.surface2,
-            borderRadius: BorderRadius.circular(AppRadius.pill),
-          ),
-          child: Text(label,
-              style: AppText.metaSmall.copyWith(
-                  fontSize: 11,
-                  color: active ? AppColors.bg : AppColors.text,
-                  fontWeight: FontWeight.w700)),
-        ),
+    if (state == null) {
+      // Тихий чёрный сплэш, пока читаем флаги (это миллисекунды).
+      return const Scaffold(
+        backgroundColor: AppColors.bg,
+        body: SizedBox.shrink(),
       );
     }
 
-    return Positioned(
-      right: 12,
-      bottom: 100,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          chip(HomeMode.active, 'active'),
-          const SizedBox(height: 6),
-          chip(HomeMode.empty, 'empty'),
-          const SizedBox(height: 6),
-          chip(HomeMode.loading, 'loading'),
-        ],
-      ),
-    );
+    switch (state) {
+      case _StartupState.signIn:
+        return const SignInScreen();
+      case _StartupState.onboarding:
+        return OnboardingScreen(
+          onFinish: () => AppRestart.restart(context),
+        );
+      case _StartupState.home:
+        return const RootScreen();
+    }
   }
 }
+
+enum _StartupState { signIn, onboarding, home }

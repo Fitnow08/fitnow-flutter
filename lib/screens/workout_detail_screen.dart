@@ -4,6 +4,7 @@ import '../theme/app_icons.dart';
 import '../theme/app_typography.dart';
 import '../widgets/common.dart';
 import '../widgets/detail_common.dart';
+import 'player_screen.dart';
 
 /// Данные одного упражнения
 typedef Exercise = ({String name, String meta, String level});
@@ -177,11 +178,21 @@ class WorkoutDetailScreen extends StatelessWidget {
           // Sticky CTA
           DetailStickyCta(
             label: 'Начать',
-            onTap: () {
-              // Плеер тренировки — следующий этап
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Плеер тренировки — скоро'), duration: Duration(seconds: 1)),
+            onTap: () async {
+              final result = await Navigator.of(context).push<bool>(
+                MaterialPageRoute(
+                  fullscreenDialog: true,
+                  builder: (_) => const PlayerScreen(workout: PlayerWorkout.sample),
+                ),
               );
+              if (result == true && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Тренировка завершена 💪'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              }
             },
           ),
         ],

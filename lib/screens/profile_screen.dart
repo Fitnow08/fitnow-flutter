@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import '../services/auth_service.dart';
 import '../theme/app_tokens.dart';
 import '../theme/app_icons.dart';
 import '../theme/app_typography.dart';
+import '../widgets/app_restart.dart';
 import '../widgets/common.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -58,6 +60,111 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
     );
+  }
+
+  // ───────────── ВЫХОД ─────────────
+
+  /// Показывает iOS-style подтверждение и при «Выйти» делает signOut +
+  /// перезапуск дерева. Перезапуск нужен, чтобы _Bootstrap в main.dart
+  /// перечитал флаги и показал SignInScreen.
+  Future<void> _confirmSignOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.6),
+      builder: (ctx) {
+        return Dialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.xl),
+            side: BorderSide(color: AppColors.border),
+          ),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 36),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 22, 20, 14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Выйти из аккаунта?',
+                  style: AppText.cardTitle,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Тебе нужно будет снова ввести email и пароль, чтобы вернуться.',
+                  style: AppText.metaSmall.copyWith(
+                    fontSize: 13,
+                    color: AppColors.dim,
+                    height: 1.45,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => Navigator.of(ctx).pop(false),
+                        behavior: HitTestBehavior.opaque,
+                        child: Container(
+                          height: 44,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(AppRadius.md),
+                            border: Border.all(color: AppColors.whiteAlpha(0.18)),
+                          ),
+                          child: Text(
+                            'Отмена',
+                            style: AppText.label.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => Navigator.of(ctx).pop(true),
+                        behavior: HitTestBehavior.opaque,
+                        child: Container(
+                          height: 44,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(AppRadius.md),
+                            // Не lime — выход не «главное действие», а
+                            // деструктивное; используем красный тон.
+                            color: AppColors.danger.withValues(alpha: 0.14),
+                            border: Border.all(
+                              color: AppColors.danger.withValues(alpha: 0.4),
+                            ),
+                          ),
+                          child: Text(
+                            'Выйти',
+                            style: AppText.label.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.danger,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+    if (!mounted) return;
+
+    await AuthService.signOut();
+    if (!mounted) return;
+
+    // Перезапускаем всё дерево — _Bootstrap перечитает флаги и увидит,
+    // что пользователь больше не авторизован, → покажет SignInScreen.
+    AppRestart.restart(context);
   }
 
   // ───── ОБЗОР ─────
@@ -438,11 +545,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  // «Помощь» и «О приложении» — пока без onTap, экраны
+                  // ещё не сделаны. Когда появятся — обернуть в
+                  // GestureDetector аналогично «Выходу» ниже.
                   Text('Помощь', style: AppText.label.copyWith(color: AppColors.eyebrow)),
                   const SizedBox(width: 22),
                   Text('О приложении', style: AppText.label.copyWith(color: AppColors.eyebrow)),
                   const SizedBox(width: 22),
-                  Text('Выход', style: AppText.label.copyWith(color: AppColors.danger)),
+                  GestureDetector(
+                    onTap: _confirmSignOut,
+                    behavior: HitTestBehavior.opaque,
+                    child: Padding(
+                      // Расширяем зону тапа, иначе попасть пальцем сложно.
+                      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                      child: Text(
+                        'Выход',
+                        style: AppText.label.copyWith(color: AppColors.danger),
+                      ),
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 14),

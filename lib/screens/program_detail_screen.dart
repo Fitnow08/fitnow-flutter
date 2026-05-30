@@ -4,6 +4,7 @@ import '../theme/app_icons.dart';
 import '../theme/app_typography.dart';
 import '../widgets/common.dart';
 import '../widgets/detail_common.dart';
+import 'player_screen.dart';
 
 typedef ScheduleItem = ({int week, int day, String title, int minutes, String status});
 
@@ -134,10 +135,21 @@ class ProgramDetailScreen extends StatelessWidget {
           DetailHeaderOverlay(onBack: () => Navigator.of(context).maybePop()),
           DetailStickyCta(
             label: program.isActive ? 'Продолжить' : 'Начать программу',
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Плеер тренировки — скоро'), duration: Duration(seconds: 1)),
+            onTap: () async {
+              final result = await Navigator.of(context).push<bool>(
+                MaterialPageRoute(
+                  fullscreenDialog: true,
+                  builder: (_) => const PlayerScreen(workout: PlayerWorkout.sample),
+                ),
               );
+              if (result == true && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Тренировка дня завершена 💪'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              }
             },
           ),
         ],
