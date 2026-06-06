@@ -4,6 +4,7 @@ import '../theme/app_tokens.dart';
 import '../theme/app_icons.dart';
 import '../theme/app_typography.dart';
 import '../widgets/progress_ring.dart';
+import '../services/workout_log_service.dart';
 
 /// Тип упражнения: на повторы или на время
 enum ExerciseKind { reps, time }
@@ -69,6 +70,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   Timer? _timer;
 
+  // Этап 3: заметка к упражнению (инлайн-редактор, без модалок)
+  final TextEditingController _exNoteCtrl = TextEditingController();
+  bool _noteOpen = false;
+  int _logTick = 0;
+  Future<ExerciseLogEntry?>? _lastLogFuture;
+  String? _lastLogKey;
+
   PlayerWorkout get _w => widget.workout;
   PlayerExercise get _ex => _w.exercises[_exIdx];
   int get _total => _w.exercises.length;
@@ -83,6 +91,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _exNoteCtrl.dispose();
     super.dispose();
   }
 
@@ -221,6 +230,202 @@ class _PlayerScreenState extends State<PlayerScreen> {
     Navigator.of(context).pop();
   }
 
+  // ───── Этап 3: заметка к упражнению ─────
+
+  // Стабильный future для подсказки «прошлый раз»: пересоздаётся только при
+  // смене упражнения или после сохранения (_logTick), иначе FutureBuilder
+  // не дёргал бы запрос на каждый тик таймера.
+  Future<ExerciseLogEntry?> _lastLogForCurrent() {
+    final k = '${_ex.name}_$_logTick';
+    if (_lastLogKey != k) {
+      _lastLogKey = k;
+      _lastLogFuture = WorkoutLogService.lastExerciseLog(_ex.name);
+    }
+    return _lastLogFuture!;
+  }
+
+  void _openExNote() {
+    _timer?.cancel();
+    _exNoteCtrl.clear();
+    setState(() => _noteOpen = true);
+  }
+
+  void _closeExNote() {
+    setState(() => _noteOpen = false);
+    _startActiveTimer(); // no-op для reps, возобновляет отсчёт для time
+  }
+
+  Future<void> _saveExNote() async {
+    final t = _exNoteCtrl.text.trim();
+    if (t.isNotEmpty) {
+      await WorkoutLogService.saveExerciseLog(exerciseName: _ex.name, note: t);
+    }
+    if (!mounted) return;
+    setState(() {
+      _noteOpen = false;
+      _logTick++;
+    });
+    _startActiveTimer();
+  }
+
+  Widget _lastNoteHint() {
+    return FutureBuilder<ExerciseLogEntry?>(
+      future: _lastLogForCurrent(),
+      builder: (context, snap) {
+        final last = snap.data;
+        if (last == null || last.note == null || last.note!.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        return Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.history_rounded, color: AppColors.eyebrow, size: 13),
+                const SizedBox(width: 7),
+                Flexible(
+                  child: Text('Прошлый раз: «${last.note}»',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.metaSmall.copyWith(fontSize: 12, color: AppColors.dim)),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // Инлайн-редактор заметки (вместо active-вида), без модального роута.
+  Widget _noteEditor() {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                GestureDetector(
+                  onTap: _closeExNote,
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: AppColors.surface2,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: const Icon(Icons.close, color: AppColors.text, size: 16),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text('Заметка к упражнению', style: AppText.cardTitle),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_ex.name.toUpperCase(), style: AppText.eyebrow.copyWith(letterSpacing: 1.2)),
+                    const SizedBox(height: 12),
+                    FutureBuilder<ExerciseLogEntry?>(
+                      future: _lastLogForCurrent(),
+                      builder: (context, snap) {
+                        final last = snap.data;
+                        if (last == null || last.note == null || last.note!.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: AppColors.surface,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: AppColors.border),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.history_rounded, color: AppColors.eyebrow, size: 14),
+                                    const SizedBox(width: 7),
+                                    Text('ПРОШЛЫЙ РАЗ', style: AppText.eyebrow.copyWith(fontSize: 10.5, letterSpacing: 1.2)),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                Text(last.note!, style: AppText.body.copyWith(fontSize: 14, color: AppColors.text)),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    TextField(
+                      controller: _exNoteCtrl,
+                      autofocus: true,
+                      minLines: 3,
+                      maxLines: 6,
+                      maxLength: 200,
+                      cursorColor: AppColors.lime,
+                      style: AppText.body.copyWith(color: AppColors.text, fontSize: 14),
+                      decoration: InputDecoration(
+                        hintText: 'Например: гантели 12 кг тяжело, взять 10',
+                        hintStyle: AppText.body.copyWith(color: AppColors.dim2, fontSize: 14),
+                        filled: true,
+                        fillColor: AppColors.surface,
+                        counterStyle: AppText.metaSmall.copyWith(color: AppColors.eyebrow),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.lg),
+                          borderSide: BorderSide(color: AppColors.border),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.lg),
+                          borderSide: BorderSide(color: AppColors.gold),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: _saveExNote,
+              child: Container(
+                width: double.infinity,
+                height: 56,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.lime,
+                  borderRadius: BorderRadius.circular(999),
+                  boxShadow: [BoxShadow(color: AppColors.lime.withValues(alpha: 0.25), blurRadius: 32, offset: const Offset(0, 12))],
+                ),
+                child: Text('Сохранить заметку',
+                    style: AppText.cardTitle.copyWith(color: AppColors.bg, fontSize: 16, fontWeight: FontWeight.w800)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ───── Сборка экрана ─────
 
   @override
@@ -335,6 +540,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   // ───── State 2: Active ─────
   Widget _active() {
+    if (_noteOpen) return _noteEditor();
     final isTime = _ex.kind == ExerciseKind.time;
     return Column(
       children: [
@@ -345,6 +551,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
             children: [
               Expanded(child: _progressSegments(_total, _exIdx)),
               const SizedBox(width: 12),
+              GestureDetector(
+                onTap: _openExNote,
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: AppColors.surface2,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: const Icon(Icons.edit_note_rounded, color: AppColors.text, size: 20),
+                ),
+              ),
+              const SizedBox(width: 8),
               GestureDetector(
                 onTap: _confirmExit,
                 child: Container(
@@ -450,6 +670,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
               const SizedBox(height: 4),
               Text('Подход $_setIdx из ${_ex.sets}',
                   style: AppText.metaSmall.copyWith(fontSize: 13, fontWeight: FontWeight.w600)),
+              _lastNoteHint(),
             ],
           ),
         ),
@@ -802,12 +1023,33 @@ class _FinishedView extends StatefulWidget {
 
 class _FinishedViewState extends State<_FinishedView> {
   String? _mood;
+  final TextEditingController _noteCtrl = TextEditingController();
+  bool _noteOpen = false;
+  bool _saving = false;
 
   static const _moods = [
     (id: 'tough', label: 'Тяжело', glyph: '😮‍💨'),
     (id: 'good', label: 'Хорошо', glyph: '🙂'),
     (id: 'fire', label: 'Огонь', glyph: '🔥'),
   ];
+
+  @override
+  void dispose() {
+    _noteCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _finish() async {
+    if (_saving) return;
+    _saving = true;
+    final note = _noteCtrl.text.trim();
+    await WorkoutLogService.saveWorkoutEntry(
+      workoutTitle: widget.workout.title,
+      mood: _mood,
+      note: note.isEmpty ? null : note,
+    );
+    widget.onDone();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -836,96 +1078,104 @@ class _FinishedViewState extends State<_FinishedView> {
           padding: const EdgeInsets.fromLTRB(20, 60, 20, 36),
           child: Column(
             children: [
+              // Контент скроллится — при клавиатуре просто прокрутка,
+              // никаких модалок и внешнего IntrinsicHeight.
               Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: 110,
-                      height: 110,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.gold,
-                        boxShadow: [BoxShadow(color: AppColors.gold.withValues(alpha: 0.33), blurRadius: 60, offset: const Offset(0, 20))],
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 8),
+                      Container(
+                        width: 110,
+                        height: 110,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: AppColors.gold,
+                          boxShadow: [BoxShadow(color: AppColors.gold.withValues(alpha: 0.33), blurRadius: 60, offset: const Offset(0, 20))],
+                        ),
+                        child: const Icon(Icons.check_rounded, color: AppColors.bg, size: 58),
                       ),
-                      child: const Icon(Icons.check_rounded, color: AppColors.bg, size: 58),
-                    ),
-                    const SizedBox(height: 26),
-                    Text('ГОТОВО', style: AppText.eyebrow.copyWith(color: AppColors.mutedGreen, letterSpacing: 1.8)),
-                    const SizedBox(height: 8),
-                    Text('Тренировка завершена!',
-                        textAlign: TextAlign.center,
-                        style: AppText.metricLg.copyWith(fontSize: 28, letterSpacing: -0.6)),
-                    const SizedBox(height: 6),
-                    SizedBox(
-                      width: 280,
-                      child: Text('${w.title} · ты в форме сегодня.',
+                      const SizedBox(height: 26),
+                      Text('ГОТОВО', style: AppText.eyebrow.copyWith(color: AppColors.mutedGreen, letterSpacing: 1.8)),
+                      const SizedBox(height: 8),
+                      Text('Тренировка завершена!',
                           textAlign: TextAlign.center,
-                          style: AppText.body.copyWith(fontSize: 14, color: AppColors.dim, fontWeight: FontWeight.w500, height: 1.45)),
-                    ),
-                    const SizedBox(height: 28),
-                    // Stats
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: AppColors.border),
+                          style: AppText.metricLg.copyWith(fontSize: 28, letterSpacing: -0.6)),
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        width: 280,
+                        child: Text('${w.title} · ты в форме сегодня.',
+                            textAlign: TextAlign.center,
+                            style: AppText.body.copyWith(fontSize: 14, color: AppColors.dim, fontWeight: FontWeight.w500, height: 1.45)),
                       ),
-                      child: IntrinsicHeight(
-                        child: Row(
-                          children: [
-                            _stat('${w.minutes}', 'минут'),
-                            Container(width: 1, color: AppColors.whiteAlpha(0.06)),
-                            _stat('${w.kcal}', 'ккал'),
-                            Container(width: 1, color: AppColors.whiteAlpha(0.06)),
-                            _stat('${w.exercises.length}', 'упражнений'),
-                          ],
+                      const SizedBox(height: 28),
+                      // Stats
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: IntrinsicHeight(
+                          child: Row(
+                            children: [
+                              _stat('${w.minutes}', 'минут'),
+                              Container(width: 1, color: AppColors.whiteAlpha(0.06)),
+                              _stat('${w.kcal}', 'ккал'),
+                              Container(width: 1, color: AppColors.whiteAlpha(0.06)),
+                              _stat('${w.exercises.length}', 'упражнений'),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 22),
-                    // Mood picker
-                    Text('Как ощущения?',
-                        style: AppText.label.copyWith(color: AppColors.eyebrow, fontWeight: FontWeight.w700, letterSpacing: 0.4)),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: _moods.map((m) {
-                        final active = _mood == m.id;
-                        return Expanded(
-                          child: Padding(
-                            padding: EdgeInsets.only(right: m.id != 'fire' ? 8 : 0),
-                            child: GestureDetector(
-                              onTap: () => setState(() => _mood = m.id),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 150),
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-                                decoration: BoxDecoration(
-                                  color: active ? AppColors.goldTint(0.1) : AppColors.surface,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(color: active ? AppColors.gold : AppColors.border, width: active ? 1.5 : 1),
-                                ),
-                                child: Column(
-                                  children: [
-                                    Text(m.glyph, style: const TextStyle(fontSize: 22)),
-                                    const SizedBox(height: 4),
-                                    Text(m.label,
-                                        style: AppText.metaSmall.copyWith(
-                                            fontSize: 11, fontWeight: FontWeight.w700, color: active ? AppColors.gold : AppColors.eyebrow)),
-                                  ],
+                      const SizedBox(height: 22),
+                      // Mood picker
+                      Text('Как ощущения?',
+                          style: AppText.label.copyWith(color: AppColors.eyebrow, fontWeight: FontWeight.w700, letterSpacing: 0.4)),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: _moods.map((m) {
+                          final active = _mood == m.id;
+                          return Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.only(right: m.id != 'fire' ? 8 : 0),
+                              child: GestureDetector(
+                                onTap: () => setState(() => _mood = m.id),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 150),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                                  decoration: BoxDecoration(
+                                    color: active ? AppColors.goldTint(0.1) : AppColors.surface,
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(color: active ? AppColors.gold : AppColors.border, width: active ? 1.5 : 1),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Text(m.glyph, style: const TextStyle(fontSize: 22)),
+                                      const SizedBox(height: 4),
+                                      Text(m.label,
+                                          style: AppText.metaSmall.copyWith(
+                                              fontSize: 11, fontWeight: FontWeight.w700, color: active ? AppColors.gold : AppColors.eyebrow)),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ],
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 10),
+                      _noteSection(),
+                      const SizedBox(height: 8),
+                    ],
+                  ),
                 ),
               ),
+              const SizedBox(height: 16),
               GestureDetector(
-                onTap: widget.onDone,
+                onTap: _finish,
                 child: Container(
                   width: double.infinity,
                   height: 56,
@@ -940,6 +1190,66 @@ class _FinishedViewState extends State<_FinishedView> {
                 ),
               ),
             ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Заметка инлайн (без модалок): строка-кнопка раскрывается в поле ввода.
+  Widget _noteSection() {
+    if (!_noteOpen) {
+      return GestureDetector(
+        onTap: () => setState(() => _noteOpen = true),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(AppIcons.plus, color: AppColors.eyebrow, size: 16),
+              const SizedBox(width: 8),
+              Text('Добавить заметку',
+                  style: AppText.body.copyWith(fontSize: 14, color: AppColors.eyebrow)),
+            ],
+          ),
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('ЗАМЕТКА О ТРЕНИРОВКЕ', style: AppText.eyebrow.copyWith(letterSpacing: 1.2)),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _noteCtrl,
+          autofocus: true,
+          minLines: 1,
+          maxLines: 3,
+          maxLength: 200,
+          textInputAction: TextInputAction.done,
+          cursorColor: AppColors.lime,
+          style: AppText.body.copyWith(color: AppColors.text, fontSize: 14),
+          decoration: InputDecoration(
+            hintText: 'Например: не доспал, тяжело зашло',
+            hintStyle: AppText.body.copyWith(color: AppColors.dim2, fontSize: 14),
+            filled: true,
+            fillColor: AppColors.surface,
+            counterStyle: AppText.metaSmall.copyWith(color: AppColors.eyebrow),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppRadius.lg),
+              borderSide: BorderSide(color: AppColors.border),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppRadius.lg),
+              borderSide: BorderSide(color: AppColors.gold),
+            ),
           ),
         ),
       ],

@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -58,9 +57,7 @@ class _BootstrapState extends State<_Bootstrap> {
   }
 
   Future<void> _resolve() async {
-    debugPrint('[BOOTSTRAP] _resolve() start');
     final authed = await AuthService.isAuthenticated();
-    debugPrint('[BOOTSTRAP] authed=$authed mounted=$mounted');
     if (!mounted) return;
 
     if (!authed) {
@@ -70,17 +67,12 @@ class _BootstrapState extends State<_Bootstrap> {
 
     final prefs = await SharedPreferences.getInstance();
     final onboardingDone = prefs.getBool('onboarding_done') ?? false;
-    debugPrint('[BOOTSTRAP] onboardingDone=$onboardingDone -> '
-        '${onboardingDone ? "home" : "onboarding"}');
     if (!mounted) return;
 
     setState(() {
       _state = onboardingDone ? _StartupState.home : _StartupState.onboarding;
     });
   }
-
-  /// Вызывается из auth-экранов и онбординга — пересоздаёт дерево от
-  /// корня (AppRestart) или показывает нужный экран по флагам.
 
   @override
   Widget build(BuildContext context) {

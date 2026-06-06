@@ -3,10 +3,30 @@ import '../theme/app_tokens.dart';
 import '../theme/app_icons.dart';
 import '../theme/app_typography.dart';
 import '../widgets/common.dart';
+import '../services/workout_log_service.dart';
 
-class ProgressScreen extends StatelessWidget {
+class ProgressScreen extends StatefulWidget {
   final String name;
-  const ProgressScreen({super.key, this.name = 'Мария'});
+  const ProgressScreen({super.key, this.name = ''});
+
+  @override
+  State<ProgressScreen> createState() => _ProgressScreenState();
+}
+
+class _ProgressScreenState extends State<ProgressScreen> {
+  late Future<List<WorkoutLogEntry>> _historyFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _historyFuture = WorkoutLogService.workoutHistory();
+  }
+
+  Future<void> _reloadHistory() async {
+    final f = WorkoutLogService.workoutHistory();
+    setState(() => _historyFuture = f);
+    await f;
+  }
 
   static const _week = [
     (d: 'Пн', m: 28, today: false),
@@ -39,7 +59,12 @@ class ProgressScreen extends StatelessWidget {
     const maxM = 70.0;
     final totalMin = _week.fold<int>(0, (s, w) => s + w.m);
 
-    return ListView(
+    return RefreshIndicator(
+      onRefresh: _reloadHistory,
+      color: AppColors.gold,
+      backgroundColor: AppColors.surface,
+      child: ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.only(top: 56, bottom: 110),
       children: [
         _header(),
@@ -48,10 +73,13 @@ class ProgressScreen extends StatelessWidget {
         const SizedBox(height: 20),
         _comparison(),
         const SizedBox(height: 24),
+        _diarySection(),
+        const SizedBox(height: 28),
         _prSection(),
         const SizedBox(height: 28),
         _badgesSection(),
       ],
+      ),
     );
   }
 
@@ -68,7 +96,7 @@ class ProgressScreen extends StatelessWidget {
                 Text('Прогресс',
                     style: AppText.meta.copyWith(fontWeight: FontWeight.w500, letterSpacing: 0.2)),
                 const SizedBox(height: 4),
-                Text('Ты в огне, $name', style: AppText.bigTitle),
+                Text(widget.name.isEmpty ? 'Ты в огне!' : 'Ты в огне, ${widget.name}', style: AppText.bigTitle),
               ],
             ),
           ),
@@ -296,7 +324,7 @@ class ProgressScreen extends StatelessWidget {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 20),
             itemCount: _badges.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
             itemBuilder: (_, i) {
               final b = _badges[i];
               return Opacity(
@@ -339,4 +367,147 @@ class ProgressScreen extends StatelessWidget {
       ],
     );
   }
+
+
+  // ───── Этап 4: дневник тренировок (настроение + заметка) ─────
+
+  Widget _diarySection() {
+    return FutureBuilder<List<WorkoutLogEntry>>(
+      future: _historyFuture,
+      builder: (context, snap) {
+        final entries = snap.data ?? const <WorkoutLogEntry>[];
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Недавние тренировки', style: AppText.sectionTitle),
+                  if (entries.isNotEmpty)
+                    Text('${entries.length}', style: AppText.label.copyWith(color: AppColors.eyebrow)),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: entries.isEmpty
+                  ? _diaryEmpty()
+                  : Column(
+                      children: [
+                        for (final e in entries.take(5))
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: _diaryCard(e),
+                          ),
+                      ],
+                    ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _diaryEmpty() {
+    return SurfaceCard(
+      radius: AppRadius.xl,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.whiteAlpha(0.06),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.event_note_rounded, color: AppColors.dim2, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text('Здесь появятся твои тренировки — с настроением и заметкой после завершения.',
+                style: AppText.metaSmall.copyWith(color: AppColors.eyebrow, height: 1.4)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _diaryCard(WorkoutLogEntry e) {
+    final glyph = _moodGlyph(e.mood);
+    final hasNote = e.note != null && e.note!.isNotEmpty;
+    return SurfaceCard(
+      radius: AppRadius.xl,
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppColors.whiteAlpha(0.06),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: glyph != null
+                ? Text(glyph, style: const TextStyle(fontSize: 22))
+                : const Icon(AppIcons.dumbbell, color: AppColors.dim2, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(e.workoutTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.body.copyWith(fontSize: 14.5)),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(_relDate(e.date), style: AppText.metaSmall.copyWith(fontSize: 12)),
+                  ],
+                ),
+                if (hasNote) ...[
+                  const SizedBox(height: 6),
+                  Text('«${e.note!}»',
+                      style: AppText.metaSmall.copyWith(fontSize: 13, color: AppColors.dim, height: 1.35)),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String? _moodGlyph(String? mood) {
+    switch (mood) {
+      case 'tough':
+        return '😮‍💨';
+      case 'good':
+        return '🙂';
+      case 'fire':
+        return '🔥';
+      default:
+        return null;
+    }
+  }
+
+  String _relDate(DateTime d) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final that = DateTime(d.year, d.month, d.day);
+    final diff = today.difference(that).inDays;
+    if (diff <= 0) return 'сегодня';
+    if (diff == 1) return 'вчера';
+    if (diff < 7) return '$diff дн назад';
+    return '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}';
+  }
+
 }

@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// AuthService — обёртка над авторизацией.
@@ -14,9 +13,7 @@ class AuthService {
 
   static Future<bool> isAuthenticated() async {
     final prefs = await SharedPreferences.getInstance();
-    final v = prefs.getBool(_kIsAuthenticated) ?? false;
-    debugPrint('[AUTH] isAuthenticated() -> $v');
-    return v;
+    return prefs.getBool(_kIsAuthenticated) ?? false;
   }
 
   static Future<String?> currentEmail() async {
@@ -24,19 +21,28 @@ class AuthService {
     return prefs.getString(_kUserEmail);
   }
 
+  /// Отображаемое имя: сохранённое имя (из онбординга) → иначе часть email
+  /// до @ с заглавной буквы → иначе пусто. Поле имени появится в онбординге.
+  static Future<String> displayName() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString('user_name')?.trim() ?? '';
+    if (saved.isNotEmpty) return saved;
+    final email = prefs.getString(_kUserEmail) ?? '';
+    final local = email.split('@').first.trim();
+    if (local.isEmpty) return '';
+    return local[0].toUpperCase() + local.substring(1);
+  }
+
   static Future<String?> signIn({
     required String email,
     required String password,
   }) async {
-    debugPrint('[AUTH] signIn start: email="$email" passLen=${password.length}');
     await Future<void>.delayed(const Duration(milliseconds: 900));
 
     if (!_isEmailValid(email)) {
-      debugPrint('[AUTH] signIn -> invalid email');
       return 'Введите корректный email';
     }
     if (password.length < 8) {
-      debugPrint('[AUTH] signIn -> password too short');
       return 'Неверный email или пароль';
     }
 
@@ -44,7 +50,6 @@ class AuthService {
     await prefs.setString(_kAuthToken, 'fake_token_${DateTime.now().millisecondsSinceEpoch}');
     await prefs.setString(_kUserEmail, email);
     await prefs.setBool(_kIsAuthenticated, true);
-    debugPrint('[AUTH] signIn -> SUCCESS, token saved, returning null');
     return null;
   }
 
@@ -53,7 +58,6 @@ class AuthService {
     required String password,
     required String confirmPassword,
   }) async {
-    debugPrint('[AUTH] signUp start: email="$email"');
     await Future<void>.delayed(const Duration(milliseconds: 900));
 
     if (!_isEmailValid(email)) return 'Введите корректный email';
@@ -64,7 +68,6 @@ class AuthService {
     await prefs.setString(_kAuthToken, 'fake_token_${DateTime.now().millisecondsSinceEpoch}');
     await prefs.setString(_kUserEmail, email);
     await prefs.setBool(_kIsAuthenticated, true);
-    debugPrint('[AUTH] signUp -> SUCCESS');
     return null;
   }
 
@@ -78,13 +81,10 @@ class AuthService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_kAuthToken);
     await prefs.setBool(_kIsAuthenticated, false);
-    debugPrint('[AUTH] signOut done');
   }
 
   static bool _isEmailValid(String email) {
     final r = RegExp(r'^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$');
-    final ok = r.hasMatch(email.trim());
-    debugPrint('[AUTH] _isEmailValid("$email") -> $ok');
-    return ok;
+    return r.hasMatch(email.trim());
   }
 }

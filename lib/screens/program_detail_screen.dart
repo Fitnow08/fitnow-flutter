@@ -5,6 +5,7 @@ import '../theme/app_typography.dart';
 import '../widgets/common.dart';
 import '../widgets/detail_common.dart';
 import 'player_screen.dart';
+import 'workout_detail_screen.dart';
 
 typedef ScheduleItem = ({int week, int day, String title, int minutes, String status});
 
@@ -49,6 +50,96 @@ class ProgramDetailScreen extends StatelessWidget {
       (week: 3, day: 17, title: 'Активное восстановление', minutes: 25, status: 'locked'),
     ],
   );
+
+  // ── Шаблоны упражнений по категориям дня ──────────────────────────────
+  // Уровни строго из проверенного набора: Сильно / Средне / Легко.
+  static const List<Exercise> _legsEx = [
+    (name: 'Приседания со штангой', meta: '4 × 12', level: 'Сильно'),
+    (name: 'Выпады с гантелями', meta: '3 × 10 на ногу', level: 'Средне'),
+    (name: 'Румынская тяга', meta: '4 × 10', level: 'Сильно'),
+    (name: 'Ягодичный мост', meta: '3 × 15', level: 'Средне'),
+    (name: 'Подъёмы на носки', meta: '4 × 20', level: 'Легко'),
+    (name: 'Планка с подъёмом ноги', meta: '3 × 40 сек', level: 'Средне'),
+  ];
+  static const List<Exercise> _upperEx = [
+    (name: 'Жим гантелей лёжа', meta: '4 × 12', level: 'Сильно'),
+    (name: 'Тяга гантели в наклоне', meta: '3 × 12 на руку', level: 'Средне'),
+    (name: 'Жим над головой', meta: '4 × 10', level: 'Сильно'),
+    (name: 'Подтягивания', meta: '3 × max', level: 'Сильно'),
+    (name: 'Разведения гантелей', meta: '3 × 15', level: 'Легко'),
+    (name: 'Отжимания', meta: '3 × 15', level: 'Средне'),
+  ];
+  static const List<Exercise> _coreEx = [
+    (name: 'Планка', meta: '3 × 60 сек', level: 'Средне'),
+    (name: 'Скручивания', meta: '3 × 20', level: 'Легко'),
+    (name: 'Боковая планка', meta: '3 × 40 сек на бок', level: 'Средне'),
+    (name: 'Велосипед', meta: '3 × 30', level: 'Средне'),
+    (name: 'Подъём ног в висе', meta: '3 × 12', level: 'Сильно'),
+    (name: 'Гиперэкстензия', meta: '3 × 15', level: 'Легко'),
+  ];
+  static const List<Exercise> _recoveryEx = [
+    (name: 'Суставная разминка', meta: '5 мин', level: 'Легко'),
+    (name: 'Кошка-корова', meta: '3 × 10', level: 'Легко'),
+    (name: 'Растяжка бёдер', meta: '3 × 30 сек', level: 'Легко'),
+    (name: 'Наклоны к ногам', meta: '3 × 30 сек', level: 'Легко'),
+    (name: 'Дыхательная практика', meta: '4 мин', level: 'Легко'),
+    (name: 'Заминка-растяжка', meta: '5 мин', level: 'Легко'),
+  ];
+
+  /// Собирает WorkoutData для дня расписания: заголовок и минуты берутся
+  /// из самого ScheduleItem (чтобы шапка деталей совпадала с нажатой строкой),
+  /// а упражнения/теги/ккал — по категории дня. Типы не меняем.
+  /// Публичный статический — единый источник правды и для деталей, и для Главной.
+  static WorkoutData workoutFor(ScheduleItem it, {double rating = 4.8}) {
+    final t = it.title.toLowerCase();
+    late final String level;
+    late final List<String> tags;
+    late final int kcal;
+    late final List<Exercise> list;
+    late final String descr;
+
+    if (t.startsWith('ноги')) {
+      level = 'Сильно';
+      tags = const ['Без прыжков', 'Гантели'];
+      kcal = 320;
+      list = _legsEx;
+      descr = 'Силовая проработка ног: квадрицепсы, ягодицы и бицепс бедра. '
+          'Базовые движения с прогрессией веса и короткими паузами между подходами.';
+    } else if (t.startsWith('верх')) {
+      level = 'Сильно';
+      tags = const ['Гантели', 'Турник'];
+      kcal = 280;
+      list = _upperEx;
+      descr = 'Тренировка верха тела: грудь, спина, плечи и руки. Сочетание '
+          'жимовых и тяговых движений для сбалансированного развития.';
+    } else if (t.startsWith('кор')) {
+      level = 'Средне';
+      tags = const ['Без инвентаря', 'Коврик'];
+      kcal = 180;
+      list = _coreEx;
+      descr = 'Работа над кором и стабильностью: глубокие мышцы живота, '
+          'поясница и баланс. Контролируемый темп, акцент на технику.';
+    } else {
+      level = 'Легко';
+      tags = const ['Без инвентаря', 'Растяжка'];
+      kcal = 120;
+      list = _recoveryEx;
+      descr = 'Лёгкая восстановительная сессия: мобилизация суставов, растяжка '
+          'и дыхание. Снижает крепатуру и готовит тело к следующей нагрузке.';
+    }
+
+    return (
+      title: it.title,
+      rating: rating,
+      level: level,
+      tags: tags,
+      exercises: list.length,
+      kcal: kcal,
+      minutes: it.minutes,
+      description: descr,
+      exerciseList: list,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -129,17 +220,24 @@ class ProgramDetailScreen extends StatelessWidget {
               DetailDescription(text: program.description),
               // Расписание
               DetailSectionHeader(title: 'Расписание', action: '${program.schedule.length}'),
-              _scheduleList(),
+              _scheduleList(context),
             ],
           ),
           DetailHeaderOverlay(onBack: () => Navigator.of(context).maybePop()),
           DetailStickyCta(
             label: program.isActive ? 'Продолжить' : 'Начать программу',
             onTap: () async {
+              // Тренировка текущего дня программы (или первая, если current нет).
+              final current = program.schedule.firstWhere(
+                (it) => it.status == 'current',
+                orElse: () => program.schedule.first,
+              );
               final result = await Navigator.of(context).push<bool>(
                 MaterialPageRoute(
                   fullscreenDialog: true,
-                  builder: (_) => const PlayerScreen(workout: PlayerWorkout.sample),
+                  builder: (_) => PlayerScreen(
+                    workout: buildPlayerWorkout(workoutFor(current, rating: program.rating)),
+                  ),
                 ),
               );
               if (result == true && context.mounted) {
@@ -157,7 +255,7 @@ class ProgramDetailScreen extends StatelessWidget {
     );
   }
 
-  Widget _scheduleList() {
+  Widget _scheduleList(BuildContext context) {
     final widgets = <Widget>[];
     int? lastWeek;
     for (final it in program.schedule) {
@@ -170,7 +268,7 @@ class ProgramDetailScreen extends StatelessWidget {
       }
       widgets.add(Padding(
         padding: const EdgeInsets.only(bottom: 8),
-        child: _scheduleRow(it),
+        child: _scheduleRow(context, it),
       ));
     }
     return Padding(
@@ -179,7 +277,7 @@ class ProgramDetailScreen extends StatelessWidget {
     );
   }
 
-  Widget _scheduleRow(ScheduleItem it) {
+  Widget _scheduleRow(BuildContext context, ScheduleItem it) {
     final isDone = it.status == 'done';
     final isCurrent = it.status == 'current';
     final isLocked = it.status == 'locked';
@@ -209,7 +307,7 @@ class ProgramDetailScreen extends StatelessWidget {
       );
     }
 
-    return Opacity(
+    final row = Opacity(
       opacity: isLocked ? 0.55 : 1,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -249,6 +347,21 @@ class ProgramDetailScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+
+    // Locked-дни не открываются — совпадает с визуалом (приглушены, замок,
+    // нет чевронки). Чтобы в портфолио ревьюер мог открыть любой день,
+    // удали эту строку (тогда locked тоже станут кликабельными).
+    if (isLocked) return row;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => WorkoutDetailScreen(workout: workoutFor(it, rating: program.rating)),
+        ),
+      ),
+      child: row,
     );
   }
 }

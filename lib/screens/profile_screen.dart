@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
 import '../theme/app_tokens.dart';
 import '../theme/app_icons.dart';
 import '../theme/app_typography.dart';
 import '../widgets/app_restart.dart';
 import '../widgets/common.dart';
+import 'paywall_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String name;
-  const ProfileScreen({super.key, this.name = 'Мария'});
+  const ProfileScreen({super.key, this.name = ''});
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
@@ -16,11 +18,68 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   String _mode = 'overview';
 
+  /// Выбранная цель (strength/lose/endurance/maintain). null — ещё не
+  /// загружена из shared_preferences или не выбиралась в онбординге.
+  String? _userGoal;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadGoal();
+  }
+
+  Future<void> _loadGoal() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => _userGoal = prefs.getString('user_goal'));
+  }
+
+  /// Сохраняет новую цель и обновляет подсветку. Та же запись в
+  /// shared_preferences, что и в онбординге (ключ 'user_goal').
+  Future<void> _selectGoal(String id) async {
+    if (_userGoal == id) return;
+    setState(() => _userGoal = id);
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('user_goal', id);
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Цель обновлена: ${_goalWord(id)}'),
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(20, 0, 20, 100),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  /// Короткое слово цели для подзаголовка профиля.
+  String _goalWord(String? id) {
+    switch (id) {
+      case 'strength':
+        return 'сила';
+      case 'lose':
+        return 'похудение';
+      case 'endurance':
+        return 'выносливость';
+      case 'maintain':
+        return 'форма';
+      default:
+        return 'не выбрана';
+    }
+  }
+
+  void _openPaywall() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const PaywallScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // Переключатель режима (обзор/настройки) — для демонстрации обоих экранов
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 56, 20, 0),
           child: Container(
@@ -64,9 +123,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   // ───────────── ВЫХОД ─────────────
 
-  /// Показывает iOS-style подтверждение и при «Выйти» делает signOut +
-  /// перезапуск дерева. Перезапуск нужен, чтобы _Bootstrap в main.dart
-  /// перечитал флаги и показал SignInScreen.
   Future<void> _confirmSignOut() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -84,19 +140,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  'Выйти из аккаунта?',
-                  style: AppText.cardTitle,
-                  textAlign: TextAlign.center,
-                ),
+                Text('Выйти из аккаунта?', style: AppText.cardTitle, textAlign: TextAlign.center),
                 const SizedBox(height: 8),
                 Text(
                   'Тебе нужно будет снова ввести email и пароль, чтобы вернуться.',
-                  style: AppText.metaSmall.copyWith(
-                    fontSize: 13,
-                    color: AppColors.dim,
-                    height: 1.45,
-                  ),
+                  style: AppText.metaSmall.copyWith(fontSize: 13, color: AppColors.dim, height: 1.45),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 20),
@@ -113,10 +161,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             borderRadius: BorderRadius.circular(AppRadius.md),
                             border: Border.all(color: AppColors.whiteAlpha(0.18)),
                           ),
-                          child: Text(
-                            'Отмена',
-                            style: AppText.label.copyWith(fontWeight: FontWeight.w600),
-                          ),
+                          child: Text('Отмена', style: AppText.label.copyWith(fontWeight: FontWeight.w600)),
                         ),
                       ),
                     ),
@@ -130,20 +175,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(AppRadius.md),
-                            // Не lime — выход не «главное действие», а
-                            // деструктивное; используем красный тон.
                             color: AppColors.danger.withValues(alpha: 0.14),
-                            border: Border.all(
-                              color: AppColors.danger.withValues(alpha: 0.4),
-                            ),
+                            border: Border.all(color: AppColors.danger.withValues(alpha: 0.4)),
                           ),
-                          child: Text(
-                            'Выйти',
-                            style: AppText.label.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.danger,
-                            ),
-                          ),
+                          child: Text('Выйти', style: AppText.label.copyWith(fontWeight: FontWeight.w700, color: AppColors.danger)),
                         ),
                       ),
                     ),
@@ -158,13 +193,74 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (confirmed != true) return;
     if (!mounted) return;
-
     await AuthService.signOut();
     if (!mounted) return;
-
-    // Перезапускаем всё дерево — _Bootstrap перечитает флаги и увидит,
-    // что пользователь больше не авторизован, → покажет SignInScreen.
     AppRestart.restart(context);
+  }
+
+  // ───── БЛОК ВЫБОРА ЦЕЛИ (из онбординга) ─────
+
+  /// Карточка одной цели. Активная — lime-рамка (это ВЫБОР пользователя,
+  /// поэтому lime, а не gold, который зарезервирован за прогрессом/PR).
+  Widget _goalCard(String id, String label, IconData icon) {
+    final active = _userGoal == id;
+    return Expanded(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _selectGoal(id),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          decoration: BoxDecoration(
+            color: active ? AppColors.lime.withValues(alpha: 0.07) : AppColors.surface,
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            border: Border.all(
+              color: active ? AppColors.lime : AppColors.border,
+              width: active ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: active ? AppColors.lime : AppColors.text, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(label, style: AppText.body.copyWith(fontSize: 13.5, fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _goalSelector() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+          child: Text('Моя цель', style: AppText.sectionTitle),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Column(
+            children: [
+              Row(children: [
+                _goalCard('strength', 'Сила', AppIcons.dumbbell),
+                const SizedBox(width: 10),
+                _goalCard('lose', 'Похудение', AppIcons.bolt),
+              ]),
+              const SizedBox(height: 10),
+              Row(children: [
+                _goalCard('endurance', 'Выносливость', AppIcons.run),
+                const SizedBox(width: 10),
+                _goalCard('maintain', 'Форма', AppIcons.yoga),
+              ]),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   // ───── ОБЗОР ─────
@@ -178,7 +274,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return ListView(
       padding: const EdgeInsets.only(top: 16, bottom: 110),
       children: [
-        // Аватар-блок
         Column(
           children: [
             Stack(
@@ -210,9 +305,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ],
             ),
             const SizedBox(height: 14),
-            Text('${widget.name} Соколова', style: AppText.metricLg.copyWith(fontSize: 24)),
+            Text(widget.name.isEmpty ? 'Профиль' : widget.name, style: AppText.metricLg.copyWith(fontSize: 24)),
             const SizedBox(height: 4),
-            Text('Начинающая · Цель: сила', style: AppText.meta),
+            Text('Начинающая · Цель: ${_goalWord(_userGoal)}', style: AppText.meta),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
@@ -230,7 +325,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ],
         ),
         const SizedBox(height: 22),
-        // Статы
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: SurfaceCard(
@@ -259,7 +353,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ),
         const SizedBox(height: 26),
-        // Цели
+        _goalSelector(),
+        const SizedBox(height: 26),
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
           child: Row(
@@ -312,7 +407,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ),
         const SizedBox(height: 16),
-        // Друзья
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: SurfaceCard(
@@ -399,8 +493,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   // ───── НАСТРОЙКИ ─────
   Widget _settings() {
-    const items = [
-      ('Мои цели', AppIcons.target, '3 активных', false),
+    final items = [
+      ('Мои цели', AppIcons.target, _goalWord(_userGoal), false),
       ('Уведомления', AppIcons.bell, 'Вкл.', false),
       ('Напоминания', AppIcons.clock, '8:00, 19:00', false),
       ('Устройства', AppIcons.watch, 'Apple Watch', false),
@@ -411,7 +505,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return ListView(
       padding: const EdgeInsets.only(top: 18, bottom: 110),
       children: [
-        // Компактный header
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
           child: Row(children: [
@@ -430,7 +523,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('${widget.name} Соколова', style: AppText.cardTitle),
+                  Text(widget.name.isEmpty ? 'Профиль' : widget.name, style: AppText.cardTitle),
                   const SizedBox(height: 2),
                   Text('Уровень 8 · Premium активна', style: AppText.metaSmall),
                 ],
@@ -438,7 +531,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ]),
         ),
-        // Premium hero
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Container(
@@ -483,21 +575,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Text('Все программы, персональный AI-тренер, без рекламы',
                     style: AppText.metaSmall.copyWith(fontSize: 12.5, color: AppColors.dim, height: 1.45)),
                 const SizedBox(height: 14),
-                Container(
-                  height: 42,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                    border: Border.all(color: AppColors.whiteAlpha(0.18)),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _openPaywall,
+                  child: Container(
+                    height: 42,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      border: Border.all(color: AppColors.whiteAlpha(0.18)),
+                    ),
+                    child: Text('Управлять подпиской', style: AppText.label.copyWith(fontWeight: FontWeight.w700)),
                   ),
-                  child: Text('Управлять подпиской', style: AppText.label.copyWith(fontWeight: FontWeight.w700)),
                 ),
               ],
             ),
           ),
         ),
         const SizedBox(height: 22),
-        // Список настроек
         Padding(
           padding: const EdgeInsets.fromLTRB(24, 0, 20, 10),
           child: Text('НАСТРОЙКИ', style: AppText.eyebrow),
@@ -510,7 +605,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: Column(
               children: [
                 for (int i = 0; i < items.length; i++)
-                  Container(
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: items[i].$4 ? _openPaywall : null,
+                    child: Container(
                     decoration: BoxDecoration(
                       border: i < items.length - 1
                           ? Border(bottom: BorderSide(color: AppColors.whiteAlpha(0.04)))
@@ -534,6 +632,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       Icon(AppIcons.chevronRight, color: AppColors.whiteAlpha(0.3), size: 14),
                     ]),
                   ),
+                  ),
               ],
             ),
           ),
@@ -545,9 +644,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // «Помощь» и «О приложении» — пока без onTap, экраны
-                  // ещё не сделаны. Когда появятся — обернуть в
-                  // GestureDetector аналогично «Выходу» ниже.
                   Text('Помощь', style: AppText.label.copyWith(color: AppColors.eyebrow)),
                   const SizedBox(width: 22),
                   Text('О приложении', style: AppText.label.copyWith(color: AppColors.eyebrow)),
@@ -556,12 +652,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     onTap: _confirmSignOut,
                     behavior: HitTestBehavior.opaque,
                     child: Padding(
-                      // Расширяем зону тапа, иначе попасть пальцем сложно.
                       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-                      child: Text(
-                        'Выход',
-                        style: AppText.label.copyWith(color: AppColors.danger),
-                      ),
+                      child: Text('Выход', style: AppText.label.copyWith(color: AppColors.danger)),
                     ),
                   ),
                 ],

@@ -8,6 +8,7 @@ import '../theme/app_typography.dart';
 class OnboardingPrefs {
   static const done = 'onboarding_done';
   static const goal = 'user_goal';
+  static const name = 'user_name';
 }
 
 class OnboardingScreen extends StatefulWidget {
@@ -20,12 +21,14 @@ class OnboardingScreen extends StatefulWidget {
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
   final _controller = PageController();
+  final _nameCtrl = TextEditingController();
   int _page = 0;
   String? _selectedGoal;
 
   @override
   void dispose() {
     _controller.dispose();
+    _nameCtrl.dispose();
     super.dispose();
   }
 
@@ -46,6 +49,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     await prefs.setBool(OnboardingPrefs.done, true);
     if (_selectedGoal != null) {
       await prefs.setString(OnboardingPrefs.goal, _selectedGoal!);
+    }
+    final name = _nameCtrl.text.trim();
+    if (name.isNotEmpty) {
+      await prefs.setString(OnboardingPrefs.name, name);
     }
     widget.onFinish();
   }
@@ -154,7 +161,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Орбитальная иллюстрация
                 SizedBox(
                   width: 240,
                   height: 240,
@@ -386,7 +392,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   child: Stack(
                     clipBehavior: Clip.none,
                     children: [
-                      // Карточка-график (с лёгким наклоном)
                       Positioned(
                         top: 10,
                         left: 0,
@@ -446,7 +451,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           ),
                         ),
                       ),
-                      // Streak-чип
                       Positioned(
                         top: -6,
                         right: -4,
@@ -468,7 +472,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           ),
                         ),
                       ),
-                      // Trophy-бейдж
                       Positioned(
                         bottom: -10,
                         left: 6,
@@ -532,7 +535,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 Text('Какая твоя цель?', style: AppText.metricLg.copyWith(fontSize: 28, letterSpacing: -0.6, height: 1.05)),
                 const SizedBox(height: 8),
                 Text('Выбери одно — план подстроится под него.', style: AppText.body.copyWith(fontSize: 14, color: AppColors.dim, fontWeight: FontWeight.w500)),
-                const SizedBox(height: 22),
+                const SizedBox(height: 18),
+                _nameField(),
+                const SizedBox(height: 18),
                 Expanded(
                   child: ListView.separated(
                     itemCount: goals.length,
@@ -603,6 +608,31 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _nameField() {
+    return TextField(
+      controller: _nameCtrl,
+      textCapitalization: TextCapitalization.words,
+      textInputAction: TextInputAction.done,
+      cursorColor: AppColors.lime,
+      style: AppText.body.copyWith(fontSize: 15, color: AppColors.text, fontWeight: FontWeight.w600),
+      decoration: InputDecoration(
+        hintText: 'Как тебя зовут?',
+        hintStyle: AppText.body.copyWith(fontSize: 15, color: AppColors.dim2, fontWeight: FontWeight.w500),
+        filled: true,
+        fillColor: AppColors.surface,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(color: AppColors.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(color: AppColors.lime),
+        ),
+      ),
     );
   }
 

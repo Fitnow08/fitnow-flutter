@@ -56,7 +56,6 @@ class WorkoutDetailScreen extends StatelessWidget {
           ListView(
             padding: const EdgeInsets.only(bottom: 130),
             children: [
-              // Обложка
               DetailCover(
                 icon: AppIcons.dumbbell,
                 floatingChip: DetailFloatingChip(
@@ -64,7 +63,6 @@ class WorkoutDetailScreen extends StatelessWidget {
                   label: '${workout.minutes} мин',
                 ),
               ),
-              // Заголовок + рейтинг
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
                 child: Row(
@@ -85,7 +83,6 @@ class WorkoutDetailScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              // Чипы
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
                 child: Wrap(
@@ -97,15 +94,12 @@ class WorkoutDetailScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              // Метрики
               MetricsRow(items: [
                 (value: '${workout.exercises}', label: 'упражнений', color: null),
                 (value: '${workout.kcal}', label: 'ккал', color: null),
                 (value: '${workout.minutes}', label: 'минут', color: null),
               ]),
-              // Описание
               DetailDescription(text: workout.description),
-              // Упражнения
               DetailSectionHeader(title: 'Упражнения', action: '${workout.exerciseList.length}'),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -119,7 +113,6 @@ class WorkoutDetailScreen extends StatelessWidget {
                         padding: const EdgeInsets.all(10),
                         child: Row(
                           children: [
-                            // Миниатюра с номером
                             Stack(
                               children: [
                                 PhotoPlaceholder(
@@ -173,16 +166,14 @@ class WorkoutDetailScreen extends StatelessWidget {
               ),
             ],
           ),
-          // Шапка с кнопками назад/поделиться
           DetailHeaderOverlay(onBack: () => Navigator.of(context).maybePop()),
-          // Sticky CTA
           DetailStickyCta(
             label: 'Начать',
             onTap: () async {
               final result = await Navigator.of(context).push<bool>(
                 MaterialPageRoute(
                   fullscreenDialog: true,
-                  builder: (_) => const PlayerScreen(workout: PlayerWorkout.sample),
+                  builder: (_) => PlayerScreen(workout: buildPlayerWorkout(workout)),
                 ),
               );
               if (result == true && context.mounted) {
@@ -199,4 +190,62 @@ class WorkoutDetailScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+
+/// Преобразует WorkoutData (детали/программа) в PlayerWorkout для плеера.
+/// Парсит meta упражнения («4 × 12», «3 × 40 сек», «5 мин», «3 × max», …)
+/// в подходы / тип (reps|time) / количество.
+PlayerWorkout buildPlayerWorkout(WorkoutData w) {
+  final list = w.exerciseList.map(_playerExerciseFromMeta).toList();
+  return PlayerWorkout(
+    title: w.title,
+    minutes: w.minutes,
+    kcal: w.kcal,
+    exercises: list.isEmpty
+        ? const [PlayerExercise(name: 'Упражнение', sets: 1, kind: ExerciseKind.reps, amount: 10)]
+        : list,
+  );
+}
+
+PlayerExercise _playerExerciseFromMeta(Exercise e) {
+  final meta = e.meta;
+  final lower = meta.toLowerCase();
+  final isTime = lower.contains('сек') || lower.contains('мин');
+  final isMin = lower.contains('мин');
+
+  final nums = RegExp(r'\d+').allMatches(meta).map((m) => int.parse(m.group(0)!)).toList();
+
+  int sets;
+  int amount;
+  if (meta.contains('×')) {
+    sets = nums.isNotEmpty ? nums[0] : 1;
+    amount = nums.length > 1 ? nums[1] : 12; // «3 × max» — нет второго числа
+  } else {
+    sets = 1;
+    amount = nums.isNotEmpty ? nums[0] : 1;
+  }
+  if (isMin) amount *= 60; // минуты → секунды
+
+  String? unit;
+  if (isTime) {
+    unit = 'сек';
+  } else {
+    for (final phrase in const ['на ногу', 'на руку', 'на бок']) {
+      if (lower.contains(phrase)) {
+        unit = phrase;
+        break;
+      }
+    }
+  }
+
+  if (isTime && amount <= 0) amount = 30; // защита от деления на ноль в кольце
+
+  return PlayerExercise(
+    name: e.name,
+    sets: sets < 1 ? 1 : sets,
+    kind: isTime ? ExerciseKind.time : ExerciseKind.reps,
+    amount: amount < 0 ? 0 : amount,
+    unit: unit,
+  );
 }
