@@ -1,48 +1,102 @@
-import 'package:firebase_core/firebase_core.dart';
-import 'package:fitnow/core/configs/routers/routers.dart';
-import 'package:fitnow/core/configs/services/notification.dart';
-import 'package:fitnow/core/configs/services/onboarding.dart';
-import 'package:fitnow/core/configs/theme/app_theme.dart';
-import 'package:fitnow/firebase_options.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  await dotenv.load(fileName: '.env');
-  final notificationService = NotificationService();
-  await notificationService.initialize();
-  final prefs = await SharedPreferences.getInstance();
-  final container = ProviderContainer(
-    overrides: [
-      onboardingServiceProvider.overrideWithValue(OnboardingService(prefs)),
-    ],
-  );
-  runApp(UncontrolledProviderScope(container: container, child: const MyApp()));
+import 'services/auth_service.dart';
+import 'theme/app_tokens.dart';
+import 'theme/app_typography.dart'; // нужен для buildFitNowTheme()
+import 'widgets/app_restart.dart';
+
+// Экраны:
+import 'screens/sign_in_screen.dart';
+import 'screens/onboarding_screen.dart';
+import 'screens/root_screen.dart';
+
+void main() {
+  runApp(const AppRestart(child: FitNowApp()));
 }
 
-class MyApp extends ConsumerWidget {
-  const MyApp({super.key});
+class FitNowApp extends StatelessWidget {
+  const FitNowApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return MaterialApp.router(
-      title: 'Fitnow',
-      theme: AppTheme.darkTheme,
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'FitNow',
       debugShowCheckedModeBanner: false,
-      routerConfig: AppRouter.router(ref),
-      scrollBehavior: const MaterialScrollBehavior().copyWith(
-        dragDevices: {
-          PointerDeviceKind.mouse,
-          PointerDeviceKind.touch,
-          PointerDeviceKind.stylus,
-          PointerDeviceKind.trackpad,
-        },
-      ),
+      theme: buildFitNowTheme(),
+      home: const _Bootstrap(),
     );
   }
 }
+
+/// Решает, какой экран показать первым.
+///
+/// Логика:
+///   1) Не авторизован                    → SignInScreen
+///   2) Авторизован, онбординг не пройден → OnboardingScreen
+///   3) Авторизован + онбординг пройден   → RootScreen (4 вкладки)
+///
+/// После входа/регистрации auth-экраны вызывают AppRestart.restart(),
+/// который пересоздаёт всё дерево от корня — _Bootstrap заново читает
+/// флаги и показывает нужный экран. Онбординг делает то же через onFinish.
+class _Bootstrap extends StatefulWidget {
+  const _Bootstrap();
+
+  @override
+  State<_Bootstrap> createState() => _BootstrapState();
+}
+
+class _BootstrapState extends State<_Bootstrap> {
+  // null = ещё определяем (показываем сплэш).
+  _StartupState? _state;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolve();
+  }
+
+  Future<void> _resolve() async {
+    final authed = await AuthService.isAuthenticated();
+    if (!mounted) return;
+
+    if (!authed) {
+      setState(() => _state = _StartupState.signIn);
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final onboardingDone = prefs.getBool('onboarding_done') ?? false;
+    if (!mounted) return;
+
+    setState(() {
+      _state = onboardingDone ? _StartupState.home : _StartupState.onboarding;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = _state;
+
+    if (state == null) {
+      // Тихий чёрный сплэш, пока читаем флаги (это миллисекунды).
+      return const Scaffold(
+        backgroundColor: AppColors.bg,
+        body: SizedBox.shrink(),
+      );
+    }
+
+    switch (state) {
+      case _StartupState.signIn:
+        return const SignInScreen();
+      case _StartupState.onboarding:
+        return OnboardingScreen(
+          onFinish: () => AppRestart.restart(context),
+        );
+      case _StartupState.home:
+        return const RootScreen();
+    }
+  }
+}
+
+enum _StartupState { signIn, onboarding, home }
